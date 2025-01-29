@@ -9,31 +9,28 @@ export default function TaskManager() {
   const [tasks, setTasks] = useState([]);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskText, setTaskText] = useState("");
-  const [addedTask, setAddedTask] = useState(null);
   const [addingTask, setAddingTask] = useState(false);
   const [deletingTaskId, setDeletingTaskId] = useState(null);
 
   async function requestAccount() {
-    if (!window.ethereum) {
-      console.error("Ethereum provider not found!");
-      alert("Please install MetaMask to use this feature.");
-      return;
-    }
     await window.ethereum.request({ method: "eth_requestAccounts" });
   }
 
   async function fetchTasks() {
-    if (!window.ethereum) return;
+    if (!window.ethereum) {
+      console.error("Ethereum object not found");
+      return;
+    }
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const contract = new ethers.Contract(contractAddress, abi, provider);
 
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const contract = new ethers.Contract(contractAddress, abi, provider);
       const data = await contract.getMyTask();
-
       console.log("Fetched Tasks:", data);
 
-      const formattedTasks = data.map((task) => ({
-        id: Number(task.id), // Ensure conversion from BigNumber
+      const formattedTasks = data.map((task, index) => ({
+        id: task.id.toNumber(),
         taskTitle: task.taskTitle,
         taskText: task.taskText,
         isDeleted: task.isDeleted,
@@ -46,64 +43,55 @@ export default function TaskManager() {
   }
 
   async function addTask() {
-    if (!taskTitle || !taskText) {
-      alert("Please enter a task title and description.");
-      return;
-    }
+    if (!taskTitle || !taskText) return;
     if (!window.ethereum) return;
 
-    try {
-      await requestAccount();
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      const contract = new ethers.Contract(contractAddress, abi, signer);
-      
-      setAddingTask(true);
+    await requestAccount();
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const contract = new ethers.Contract(contractAddress, abi, signer);
+    setAddingTask(true);
 
+    try {
       const tx = await contract.addTask(taskText, taskTitle, false);
       await tx.wait();
-      
       console.log("Task added successfully!");
 
-      // Store newly added task locally
-      const newTask = { taskTitle, taskText };
-      setAddedTask(newTask);
+      
+      const newTask = {
+        id: tasks.length + 1, 
+        taskTitle,
+        taskText,
+        isDeleted: false,
+      };
 
-      // Fetch updated tasks
-      await fetchTasks();
+      setTasks((prevTasks) => [...prevTasks, newTask]);
 
-      // Clear input fields
+      
       setTaskTitle("");
       setTaskText("");
     } catch (error) {
       console.error("Error adding task:", error);
-      alert("Error adding task. Check console for details.");
     }
-
     setAddingTask(false);
   }
 
   async function deleteTask(taskId) {
     if (!window.ethereum) return;
+    await requestAccount();
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const contract = new ethers.Contract(contractAddress, abi, signer);
+    setDeletingTaskId(taskId);
 
     try {
-      await requestAccount();
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      const contract = new ethers.Contract(contractAddress, abi, signer);
-      
-      setDeletingTaskId(taskId);
-
       const tx = await contract.deleteTask(taskId);
       await tx.wait();
-
       console.log(`Task ${taskId} deleted successfully!`);
       await fetchTasks();
     } catch (error) {
       console.error("Error deleting task:", error);
-      alert("Error deleting task. Check console for details.");
     }
-
     setDeletingTaskId(null);
   }
 
@@ -114,8 +102,6 @@ export default function TaskManager() {
   return (
     <div className="p-4 max-w-xl mx-auto">
       <h1 className="text-xl font-bold mb-4">Task Manager</h1>
-
-      
 
       <div className="mb-4">
         <input
@@ -140,6 +126,7 @@ export default function TaskManager() {
         </button>
       </div>
 
+      <h2 className="text-lg font-semibold mb-2">Added Tasks:</h2>
       <ul>
         {tasks.length > 0 ? (
           tasks.map((task) => (
@@ -158,14 +145,9 @@ export default function TaskManager() {
             </li>
           ))
         ) : (
-          <p className="text-gray-500"></p>
+          <p className="text-gray-500">No tasks found.</p>
         )}
       </ul>
-      {addedTask && (
-        <div className="bg-green-200 text-green-800 p-2 mb-4 rounded">
-          <strong>Task Added:</strong> {addedTask.taskTitle} - {addedTask.taskText}
-        </div>
-      )}
     </div>
   );
 }
